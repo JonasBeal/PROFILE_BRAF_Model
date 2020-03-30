@@ -95,10 +95,8 @@ CL_RNA_profile <- read_csv(paste0("Results/Profiles/",model,"_CL_RNA_norm.csv"))
   select(-matches("_b2")) %>%
   rename_all(function(x) gsub("_b1", "", x)) %>%
   select(Patient_ID,
-         #SOX10, HGF, EGF, FGF, 
-         ERK,
-         #SPRY,
-         p70, PDK1, CRAF) %>%
+         SOX10, HGF, EGF, FGF, 
+         ERK, SPRY, p70, PDK1, CRAF) %>%
   mutate_at(vars(-Patient_ID), function(x) round(x, digits=2)) %>%
   mutate(Label_RNA=NA_character_)
 gene_names <- colnames(CL_RNA_profile)
@@ -454,8 +452,7 @@ p_table2 <- select(corr_red, SimCase, P_Mutants, P_Rates) %>%
           axis.text.y = element_blank(),
           axis.ticks.x = element_blank(),
           axis.text.x = element_blank(),
-          axis.title.x = element_blank(),
-          strip.text = element_text(size = 12)) +
+          axis.title.x = element_blank()) +
     scale_fill_manual(values=colors_perso) +
     scale_alpha_manual(values = c(0.2,1)) +
     labs(y="Data types and\npersonalization methods"#,
@@ -468,7 +465,7 @@ p_drugs <- filter(corr_red, Screening=="Drug", Metric=="AUC") %>%
            factor(levels=c("PLX-4720", "Dabrafenib"))) %>%
   ggplot(aes(x=1, y=SimCase)) +
   geom_tile(aes(fill=Pearson)) +
-  geom_text(aes(label=Label), size=5,fontface = "bold") +
+  geom_text(aes(label=Label), size=3) +
   facet_nested(.~Output+Variant) +
   scale_fill_paletteer_c("pals::ocean.balance", limits=c(-1, 1))+
   theme_pubclean() +
@@ -478,7 +475,6 @@ p_drugs <- filter(corr_red, Screening=="Drug", Metric=="AUC") %>%
         axis.title.x = element_blank(),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
-        strip.text = element_text(size = 12),
         legend.position = "right") +
   guides(fill=FALSE)
 
@@ -488,7 +484,7 @@ p_crispr <- filter(corr_red, Screening=="CRISPR") %>%
            factor(levels=c("Broad data", "Sanger data"))) %>%
   ggplot(aes(x=1, y=SimCase)) +
   geom_tile(aes(fill=Pearson)) +
-  geom_text(aes(label=Label), size=5, fontface = "bold") +
+  geom_text(aes(label=Label), size=3) +
   facet_nested(.~Output+Metric) +
   scale_fill_paletteer_c("pals::ocean.balance", limits=c(-1, 1))+
   theme_pubclean() +
@@ -498,10 +494,7 @@ p_crispr <- filter(corr_red, Screening=="CRISPR") %>%
         axis.title.x = element_blank(),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
-        strip.text = element_text(size = 14),
-        legend.position = "right",
-          axis.text = element_text(size = 12),
-          axis.title = element_text(size = 14)) +
+        legend.position = "right") +
   labs(fill="Correlation")
 
 p_1 <- egg::ggarrange(p_table2, p_drugs, p_crispr, nrow = 1, widths = c(2,4,4)#,
@@ -649,13 +642,10 @@ plot_data <- filter(data_all_clin,
     scale_fill_manual(values = colors_types_4) +
     theme(legend.position = "bottom",
           plot.title = element_text(hjust = 0.5),
-          strip.text = element_text(size = 14),
           strip.background.y = element_blank(),
           strip.text.y = element_blank(),
           panel.border = element_rect(color = "gray30",
-                                      fill = NA, size = 0.7),
-          axis.text = element_text(size = 12),
-          axis.title = element_text(size = 14)) +
+                                      fill = NA, size = 0.7)) +
     labs(#x=expression(paste("Proliferation"[BRAFinhibition]," / Proliferation"[control]))#,
          #x=TeX("$\\frac{Proliferation_{BRAFinhibited}}{Proliferation_{control}}$"),
          y="Drug screening metric\n(AUC)"
@@ -663,14 +653,14 @@ plot_data <- filter(data_all_clin,
   
   plot_data2 <- filter(plot_data, Screening=="CRISPR") %>%
     mutate(Variant="Broad data", Label_Void=" ",
-           Label_Select = if_else(Patient_ID %in% c("SK-MEL-24", "COLO-678", "HT-29", "HT-144", "HT55", "SK-MEL-30", "SK-MEL-2", "UACC-62"),
+           Label_Select = if_else(Patient_ID %in% c("SK-MEL-24", "COLO-678", "HT-29", "HT-144", "HT55", "SK-MEL-30", "SK-MEL-2"),
                                   Patient_ID, " "))
     p_crispr_scatter2 <- ggplot(plot_data2, aes(x=Score, y=Value)) +
     geom_label_repel(aes(label=Label_Void, fill=Label),
                      show.legend = TRUE,
                      box.padding = 0, label.padding = 0.02,
                      segment.color = NA) +
-    geom_text_repel(data=subset(plot_data2, Patient_ID %in% c("SK-MEL-24", "HT-29","SK-MEL-30","UACC-62")),
+    geom_text_repel(data=subset(plot_data2, Patient_ID %in% c("SK-MEL-24", "HT-29","SK-MEL-30")),
                     aes(label=Label_Select, color=Label, segment.color=Label),
                     show.legend = FALSE,
                     direction = "x",
@@ -704,14 +694,11 @@ plot_data <- filter(data_all_clin,
     scale_color_manual(values = colors_types_4) +
     theme(legend.position = "right",
           plot.title = element_text(hjust = 0.5),
-          strip.text = element_text(size = 14),
           #strip.background.y = element_blank(),
           #strip.text.y = element_blank(),
           panel.border = element_rect(color = "gray30",
                                       fill = NA, size = 0.7),
-          legend.key = element_rect(fill = NA, colour = NA, size = 0.25),
-          axis.text = element_text(size = 12),
-          axis.title = element_text(size = 14)) +
+          legend.key = element_rect(fill = NA, colour = NA, size = 0.25)) +
     labs(y="CRISPR screening metric\n(scaled Bayesian factor)",
          #x=expression(paste("Proliferation"[BRAFinhibition]," / Proliferation"[control])),
          #x=TeX("$\\frac{Proliferation_{BRAFinhibited}}{Proliferation_{control}}$"),
@@ -743,7 +730,7 @@ plot_data_tab <- filter(data_all_clin,
     ggplot(aes(x=Score, y=Value)) +
     geom_label_repel(aes(fill=TCGA_label, label=Patient_ID),
                      box.padding = 0, label.padding = 0.1,
-                     size=4, color="white",segment.colour = NULL,
+                     size=3, color="white",
                      show.legend = FALSE) +
     theme_pubclean() +
     scale_fill_manual(values = colors_types) +
@@ -753,17 +740,14 @@ plot_data_tab <- filter(data_all_clin,
           #strip.text.y = element_blank(),
           panel.border = element_rect(color = "gray30",
                                       fill = NA, size = 0.7),
-          legend.key = element_rect(fill = NA, colour = NA, size = 0.25),
-          axis.text = element_text(size = 12),
-          axis.title = element_text(size = 14)) +
+          legend.key = element_rect(fill = NA, colour = NA, size = 0.25)) +
     labs(y="CRISPR screening metric\n(scaled Bayesian factor)",
-         x=TeX("$\\frac{Proliferation_{BRAFinhibited}}{Proliferation_{control}}$"),
+         #x=TeX("$\\frac{Proliferation_{BRAFinhibited}}{Proliferation_{control}}$"),
          color="Cancer type",
          alpha="BRAF status")
   
   genes_mut <- c("BRAF", "RAS", "p53", "PI3K", "MEK1_2")
   genes_RNA <- c("CRAF", "ERK", "PDK1", "p70")
-  CL_of_interest <- c("SK-MEL-24", "COLO-678", "HT-29", "HT-144", "HT55", "SK-MEL-30", "SK-MEL-2", "UACC-62")
   
   plot_data_basis <- filter(data_all_clin,
                     Target=="BRAF",
@@ -778,47 +762,40 @@ plot_data_tab <- filter(data_all_clin,
                                     one_of(genes_mut)),
               by = "Patient_ID") %>%
       gather(any_of(genes_mut),key ="Model nodes", value="Value") %>%
-    mutate(Type="Mutations profile\n(discrete)",
-           `Model nodes`=if_else(`Model nodes`=="MEK1_2", "MEK",`Model nodes`))
+    mutate(Type="Mutations profile (discrete)")
   
   plot_data_RNA <- left_join(plot_data_basis,
                              select(CL_RNA_profile, Patient_ID,
                                     one_of(genes_RNA)),
               by = "Patient_ID") %>%
       gather(any_of(genes_RNA),key ="Model nodes", value="Value") %>%
-    mutate(Type="RNA profile\n(continuous)",
-           `Model nodes`=if_else(`Model nodes`=="PDK1", "PDPK1",`Model nodes`))
+    mutate(Type="RNA profile (continuous)")
   
   plot_data_tab2 <- bind_rows(plot_data_mut, plot_data_RNA) %>%
     mutate(Value_char=as.character(Value)) %>%
     bind_rows(mutate(plot_data_basis, Value=0.5, `Model nodes`="",
-                     Value_char=Patient_ID, Type="CL")) %>%
+                     Value_char=Patient_ID, Type="Cell line")) %>%
     mutate(Patient_ID=factor(Patient_ID, levels=rev(sort(my_cell_lines))),
-           Alpha=if_else(is.na(Value), 0, 1),
-           Size_char=if_else(Value_char %in% CL_of_interest, 4, 5)) %>%
-    filter(Patient_ID %in% CL_of_interest)
+           Alpha=if_else(is.na(Value), 0, 1))
    
    p_table_cl <- ggplot(plot_data_tab2,
                         aes(x=`Model nodes`, y=Patient_ID)) +
      geom_tile(color="white", aes(fill=Value, alpha=Alpha)) +
-     geom_text(aes(label=Value_char, size=Size_char)) +
+     geom_text(aes(label=Value_char), size=2) +
      facet_nested(.~Type, scales = "free", space = "free")+
      theme_pubclean() +
       theme(legend.position = "right",
-          axis.text = element_text(size = 12),
-          axis.title = element_text(size = 14),
             axis.ticks.y = element_blank(),
             axis.text.y = element_blank(),
             axis.title.y = element_blank(),
-            #axis.text.x = element_text(size=8),
+            axis.text.x = element_text(size=8)#,
             #strip.background = element_blank(),
-            strip.text = element_text(size=14)#,
+            #strip.text = element_blank(),
             #panel.grid.major.y = element_blank()
         ) +
      scale_fill_paletteer_c("ggthemes::Classic Red-White-Green",
                             limits=c(0, 1)) +
-     scale_radius(range = c(2.5,5)) +
-     guides(alpha=FALSE, size=FALSE) +
+     guides(alpha=FALSE) +
      labs(fill="Node value")
   
   p_3 <- egg::ggarrange(p_crispr_label, p_table_cl,
@@ -878,7 +855,6 @@ p_table_red <- select(plot_data, SimCase, P_Mutants, P_Rates) %>%
       geom_text(aes(label=P_Type), color="black", angle=90) +
       theme_pubclean() +
       theme(panel.grid.minor.y = element_blank(),
-            strip.text = element_text(size=12),
             axis.ticks.y = element_blank(),
             axis.title.y = element_blank(),
             axis.text.y = element_blank(),
@@ -909,16 +885,13 @@ p_table_red <- select(plot_data, SimCase, P_Mutants, P_Rates) %>%
     theme(legend.position = "bottom",
           plot.title = element_text(hjust = 0.5),
           strip.background.y = element_blank(),
-          strip.text = element_text(size = 12),
           strip.text.y = element_blank(),
           panel.border = element_rect(color = "gray30",
                                       fill = NA, size = 0.7),
-          legend.key = element_rect(fill = NA, colour = NA, size = 0.25),
-          axis.text = element_text(size = 12),
-          axis.title = element_text(size = 14)) +
+          legend.key = element_rect(fill = NA, colour = NA, size = 0.25)) +
     labs(y="CRISPR screening metric\n(scaled Bayesian factor)",
          #x=expression(paste("Proliferation"[BRAFinhibition]," / Proliferation"[control])),
-         x=TeX("$\\frac{Proliferation_{p53inhibited}}{Proliferation_{control}}$"),
+         #x=TeX("$\\frac{Proliferation_{p53inhibited}}{Proliferation_{control}}$"),
          fill="Mutation status: ") +
     guides(fill=guide_legend(nrow=1,byrow=TRUE))
   
@@ -936,18 +909,15 @@ p_table_red <- select(plot_data, SimCase, P_Mutants, P_Rates) %>%
     scale_fill_manual(values = colors_types_add) +
     theme(legend.position = "bottom",
           plot.title = element_text(hjust = 0.5),
-          strip.text = element_text(size=12),
           strip.background.y = element_blank(),
           strip.text.y = element_blank(),
           panel.border = element_rect(color = "gray30",
                                       fill = NA, size = 0.7),
           legend.key = element_rect(fill = NA, colour = NA, size = 0.25),
           legend.title = element_blank(),
-          axis.title.y = element_blank(),
-          axis.text = element_text(size = 12),
-          axis.title = element_text(size = 14)) +
+          axis.title.y = element_blank()) +
     labs(#x=expression(paste("Proliferation"[BRAFinhibition]," / Proliferation"[control])),
-         x=TeX("$\\frac{Proliferation_{PI3Kinhibited}}{Proliferation_{control}}$"),
+         #x=TeX("$\\frac{Proliferation_{PI3Kinhibited}}{Proliferation_{control}}$"),
          fill="Cancer type\n(and BRAF status)") +
     guides(fill=guide_legend(nrow=1,byrow=TRUE))
   
