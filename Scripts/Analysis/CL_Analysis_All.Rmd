@@ -16,8 +16,9 @@ sim_cases <- c("mut","RNA", "mut_RNA")
 
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 #Packages
+#devtools::install_github("teunbrand/ggh4x")
 if (!require("pacman")) install.packages("pacman")
-list.of.packages <- c("readxl","knitr","corrplot","ggfortify","reshape2","gridExtra","magrittr", "tictoc", "ggrepel", "broom", "nlme", "lme4", "lmerTest", "eulerr", "plotly", "paletteer", "ggpubr", "cowplot", "ggcorrplot", "ggnomics", "tidyverse", "UpSetR", "latex2exp")
+list.of.packages <- c("readxl","knitr","corrplot","ggfortify","reshape2","gridExtra","magrittr", "tictoc", "ggrepel", "broom", "nlme", "lme4", "lmerTest", "eulerr", "plotly", "paletteer", "ggpubr", "cowplot", "ggcorrplot", "ggh4x", "tidyverse", "UpSetR", "latex2exp")
 pacman::p_load(list.of.packages, character.only = TRUE)
 select <- dplyr::select
 tbl_to_df <- function(x){
@@ -196,7 +197,7 @@ print("All imports OK")
 
 But first, is there any consistence between all these values?
 
-```{r plot_correlation_metrics, echo=FALSE, message=FALSE, warning=FALSE, eval=TRUE}
+```{r plot_correlation_metrics, eval=TRUE, echo=FALSE, fig.height=7, fig.width=9, message=FALSE, warning=FALSE}
 CL_Metrics_Reduced <- filter(CL_Metrics, Metric %in% c("AUC", "CC2")) %>%
   mutate(Label=paste0(Screening, "_", Variant))
 
@@ -284,7 +285,7 @@ data_all_clin <- data_all %>%
 
 # Simulations: a first quantitative approach with correlations
 
-```{r correlations, echo=FALSE, fig.height=6, fig.width=9, message=FALSE, warning=FALSE}
+```{r correlations, echo=FALSE, fig.height=6, fig.width=10, message=FALSE, warning=FALSE}
 
 corr <- group_by(data_all_clin, SimCase, P_Mutants, P_Rates,
                  Target, Screening, Metric, Variant, Output) %>%
@@ -371,6 +372,9 @@ p_crispr <- filter(corr_red, Screening=="CRISPR") %>%
 if (nrow(filter(corr_red, Screening=="Drug"))>0){
   egg::ggarrange(p_table, p_drugs, p_crispr, nrow = 1, widths = c(2,4,4),
                labels = c("A", "B", "C"))
+  
+  egg::ggarrange(p_table, p_drugs, p_crispr, nrow = 1, widths = c(2,4,4),
+               labels = c("A", "B", "C"))
 } else {
   egg::ggarrange(p_table, p_crispr, nrow = 1, widths = c(2,4),
                labels = c("A", "C"))
@@ -402,7 +406,7 @@ For drugs we will focus on PLX (but very similar to PLX in all aspects, no parti
 
 Here is the pruned version of the plot for publication:
 
-```{r correlations_pub, echo=FALSE, fig.height=6, fig.width=9, message=FALSE, warning=FALSE, eval=TRUE}
+```{r correlations_pub, echo=FALSE, fig.height=6, fig.width=10, message=FALSE, warning=FALSE, eval=TRUE}
 
 corr_red <- filter(corr,
                    SimCase %in% sim_cases,
@@ -726,9 +730,125 @@ plot_data <- filter(data_all_clin,
 
 ```
 
+```{r scatter_pub2, echo=FALSE, message=FALSE, warning=FALSE, eval=FALSE, fig.height=6, fig.width=9}
+
+plot_data <- filter(data_all_clin,
+                    Target=="BRAF",
+                    Metric %in% c("CC2", "AUC"),
+                    Drug_Name!="Dabrafenib" | Screening=="CRISPR",
+                    Output=="Prolif. norm.",
+                    SimCase %in% sim_cases,
+                    !is.na(Value)) %>%
+  left_join(select(CL_mut_profile, Patient_ID, BRAF),
+              by = "Patient_ID") %>%
+    mutate(BRAF=case_when(
+      BRAF==1 ~ "Gain function",
+      BRAF==0 ~ "Loss function",
+      is.na(BRAF) ~ "No mutation"
+    ),
+    SimCase=case_when(
+      SimCase=="mut" ~ "Mutations",
+      SimCase=="RNA" ~ "RNA",
+      SimCase=="mut_RNA" ~ "Mutations & RNA"
+    ) %>% factor(levels=c("Mutations", "RNA", "Mutations & RNA"))
+    )
+  
+  p_drugs_scatter2 <- filter(plot_data, Screening=="Drug") %>%
+    mutate(Label_Void=" ") %>%
+    ggplot(aes(x=Score, y=Value)) +
+    geom_label_repel(aes(label=Label_Void, fill=TCGA_label,
+                         color=BRAF), label.size=0.75,
+                     show.legend = F,
+                     box.padding = 0, label.padding = 0.02,
+                     segment.color = NA) +
+    stat_cor(aes(label = ..r.label..),
+             method="pearson", label.y.npc="top") +
+    facet_grid(SimCase~Drug_Name) +
+    theme_pubclean() +
+    scale_fill_manual(values = colors_types) +
+    scale_color_manual(values=c("Loss function"=NA, "Gain function"="#701B06FF")) +
+    theme(legend.position = "bottom",
+          plot.title = element_text(hjust = 0.5),
+          strip.text = element_text(size = 14),
+          strip.background.y = element_blank(),
+          strip.text.y = element_blank(),
+          panel.border = element_rect(color = "gray30",
+                                      fill = NA, size = 0.7),
+          axis.text = element_text(size = 12),
+          axis.title = element_text(size = 14)) +
+    labs(#x=expression(paste("Proliferation"[BRAFinhibition]," / Proliferation"[control]))#,
+         #x=TeX("$\\frac{Proliferation_{BRAFinhibited}}{Proliferation_{control}}$"),
+         y="Drug screening metric\n(AUC)"
+         )
+  
+  plot_data2 <- filter(plot_data, Screening=="CRISPR") %>%
+    mutate(Variant="Broad data", Label_Void=" ",
+           Label_Select = if_else(Patient_ID %in% c("SK-MEL-24", "COLO-678", "HT-29", "HT-144", "HT55", "SK-MEL-30", "SK-MEL-2", "UACC-62"),
+                                  Patient_ID, " "))
+    p_crispr_scatter2 <- ggplot(plot_data2, aes(x=Score, y=Value)) +
+    geom_label_repel(aes(label=Label_Void, fill=Label),
+                     show.legend = TRUE,
+                     box.padding = 0, label.padding = 0.02,
+                     segment.color = NA) +
+    geom_text_repel(data=subset(plot_data2, Patient_ID %in% c("SK-MEL-24", "HT-29","SK-MEL-30","UACC-62")),
+                    aes(label=Label_Select, color=Label, segment.color=Label),
+                    show.legend = FALSE,
+                    direction = "x",
+                    ylim = c(6, NA),
+                    size=3) +
+      geom_text_repel(data=subset(plot_data2,
+                                  (Patient_ID %in% c("COLO-678","SK-MEL-2") &
+                                    SimCase %in% c("RNA", "Mutations & RNA")) |
+                                    Patient_ID %in% c("HT55","HT-144") &
+                                    SimCase %in% c("RNA")),
+                    aes(label=Label_Select, color=Label, segment.color=Label),
+                    show.legend = FALSE,
+                    direction = "y",
+                    xlim = c(1.05, NA),
+                    size=3) +
+      geom_text_repel(data=subset(plot_data2,
+                                  (Patient_ID %in% c("HT55","HT-144") &
+                                     SimCase!="RNA") |
+                                    (Patient_ID %in% c("COLO-678","SK-MEL-2") &
+                                     SimCase=="Mutations")),
+                    aes(label=Label_Select, color=Label, segment.color=Label),
+                    show.legend = FALSE,
+                    direction = "y",
+                    xlim = c(NA, 0.45), ylim = c(NA, 2),
+                    size=3) +
+    ylim(c(-3,7)) + xlim(0, 1.3) +
+    stat_cor(aes(label = ..r.label..), method="pearson", label.y.npc="bottom") +
+    facet_grid(SimCase~Variant) +
+    theme_pubclean() +
+    scale_fill_manual(values = colors_types_4) +
+    scale_color_manual(values = colors_types_4) +
+    theme(legend.position = "right",
+          plot.title = element_text(hjust = 0.5),
+          strip.text = element_text(size = 14),
+          #strip.background.y = element_blank(),
+          #strip.text.y = element_blank(),
+          panel.border = element_rect(color = "gray30",
+                                      fill = NA, size = 0.7),
+          legend.key = element_rect(fill = NA, colour = NA, size = 0.25),
+          axis.text = element_text(size = 12),
+          axis.title = element_text(size = 14)) +
+    labs(y="CRISPR screening metric\n(scaled Bayesian factor)",
+         #x=expression(paste("Proliferation"[BRAFinhibition]," / Proliferation"[control])),
+         #x=TeX("$\\frac{Proliferation_{BRAFinhibited}}{Proliferation_{control}}$"),
+         fill="Cancer type\n(and BRAF status)") +
+      guides(color=FALSE, text=FALSE)
+  
+  
+  p_2 <- egg::ggarrange(p_drugs_scatter2, p_crispr_scatter2,
+                 nrow = 1, widths = c(4,4))
+
+  #p_2
+
+```
+
 And here is the version with table
 
-```{r scatter_pub_table, echo=FALSE, message=FALSE, warning=FALSE, eval=TRUE, fig.height=6, fig.width=9}
+```{r scatter_pub_table, echo=FALSE, message=FALSE, warning=FALSE, eval=TRUE, fig.height=6, fig.width=12}
 
 plot_data_tab <- filter(data_all_clin,
                     Target=="BRAF",
@@ -834,7 +954,7 @@ plot_data_tab <- filter(data_all_clin,
 
 Additional plot for p53 and PI3K:
 
-```{r scatter_pub_add, echo=FALSE, message=FALSE, warning=FALSE, eval=FALSE, fig.height=6, fig.width=9}
+```{r scatter_pub_add, echo=FALSE, message=FALSE, warning=FALSE, eval=TRUE, fig.height=6, fig.width=10}
 colors_types_add <- c("p53: Loss function"="#B18147FF",
                   "p53: No mutation"="#B2AAA2FF",
                   "PI3K: Gain function"="#803B31FF",
@@ -1039,6 +1159,44 @@ p_crispr <- filter(data_all_clin_reduced,
 ply_crispr <- ggplotly(p_crispr, tooltip = "text")
 
 subplot(p_table_interactive, ply_crispr, widths =c(0.3, 0.7))
+```
 
+And a last interactive plot to visualize the benefit of RNA addition for CRISPR prediction:
+
+```{r, multi_omics, echo=FALSE, warning=FALSE, fig.width = 10, fig.height=4.5, eval=TRUE}
+
+plot_data <- filter(data_all_clin,
+                    Target=="BRAF",
+                    Metric %in% c("CC2"),
+                    P_Mutants=="Mutations",
+                    Output=="Prolif. norm.",
+                    SimCase %in% c('mut', 'mut_RNA'),
+                    !is.na(Value)) %>%
+  mutate(Label=paste0(Patient_ID, " (", TCGA_label,")\n",Label_Mut, "\n", Label_RNA)) %>%
+  mutate(SimCase=if_else(SimCase=="mut", "Mutations", "Mutations & RNA"))
+
+p_crispr <- ggplot(plot_data, aes(x=Score, y=Value)) +
+  geom_point(aes(color=TCGA_label, text=Label, frame=SimCase),
+             show.legend = FALSE) +
+  #facet_grid(SimCase~.) +
+  theme_pubclean() +
+  scale_color_manual(values = colors_types)  +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5),
+        strip.background.y = element_blank(),
+        strip.text.y = element_blank(),
+        panel.border = element_rect(color = "gray30",
+                                    fill = NA, size = 0.7)) +
+  labs(title="CRISPR: (Prolif. norm.) VS (CRISPR Broad)",
+       x="Score from model",
+       y="Exp. sensitivity")
+ply_crispr <- ggplotly(p_crispr, tooltip = "text") %>%
+  animation_slider(currentvalue = list(prefix = "Personalization with ", font = list(color="black")),
+                   lenmode="fraction",
+                   len=0.5,
+                   x=0.2,
+                   y=-0.1)
+
+ply_crispr
 
 ```
