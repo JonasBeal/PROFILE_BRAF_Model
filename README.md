@@ -1,4 +1,5 @@
 # PROFILE_BRAF_Model
+
 Repository for the project about personalized logical models to study response to BRAF inhibitors
 
 Here are the the data files, scripts and plots supporting the study provided in the article. Please refer to the corresponding article for additional explanations regarding the context and the methods.
@@ -6,7 +7,7 @@ Code about model checking is available in another Github repository: https://git
 
 All results file and analysis are already available. In particular, main analysis and reproduction of article plots are available in:
 
-* Scripts/Analysis/CL_Analysis_All.html
+* Analysis.html
 
 It also possible to reproduce theses steps following the instructions below.
 
@@ -27,20 +28,20 @@ One data file has to be decompressed:
 
 Run the Rmd script:
 
-* Scripts/Profiles/CL_profiles.Rmd
+* Scripts/Profiles/Profiles.Rmd
 
 ## Simulation of personalized logical models
 
 Run the bash script:
 
-* BRAF_CL.sh
+* Simulation.sh
 
 Please import the appropriate dependencies mentioned at the beginning of the simulation script:
 
-* Scripts/Simulations/MaBoSS_specific_drugs_py.py
+* Scripts/Simulations/MaBoSS_PROFILE_drugs.py
 
 ## Analysis and article plots
 
 Run the Rmd script:
 
-* Scripts/Analysis/CL_Analysis_All.Rmd
+* Scripts/Analysis/Analysis.Rmd

@@ -1,0 +1,443 @@
+---
+title: "Comparison_ML"
+author: "Jonas BÉAL"
+date: "30/03/2020"
+output:
+  html_document:
+    number_sections: yes
+---
+
+This notebook focuses on machine learning (ML) approaches. The idea is not to compare performances with logical models but to answer the following questions:
+
+* Are the variables selected by ML alorithms the same as the ones used by personalized logical models?
+* What kind of interpretation could we derive from simple ML analysis?
+
+Since the corresponding publication is not focused on ML, we will not benchmark all possible ML approaches or perfectly fine-tune all the parameters. The objective is to compare with a simple "out-of-the-box" ML approach. We chose to focus on random forests for their versatility and existing post-hoc interpretability methods (variable importance etc.)
+
+```{r setup, include=FALSE}
+#Infos from simulations
+model <- c("BRAF_Model")
+models_outputs <- c("Proliferation_b1","Proliferation_b2")
+
+sim_cases <- c("mut","RNA", "mut_RNA")
+
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+#Packages
+if (!require("pacman")) install.packages("pacman")
+list.of.packages <- c("readxl","knitr","corrplot","ggfortify","reshape2","gridExtra","magrittr", "tictoc", "ggrepel", "broom", "nlme", "lme4", "lmerTest", "eulerr", "plotly", "paletteer", "ggpubr", "cowplot", "ggcorrplot", "tidyverse", "latex2exp", "randomForestSRC", "tictoc")
+pacman::p_load(list.of.packages, character.only = TRUE)
+select <- dplyr::select
+tbl_to_df <- function(x){
+  x <- x %>% as.data.frame %>%  remove_rownames %>% column_to_rownames(var="model_name")
+}
+
+#Paths
+original_path <- normalizePath(getwd())
+base_folder <- original_path %>% dirname %>% dirname
+knitr::opts_knit$set(root.dir = base_folder)
+```
+
+# Import data
+
+Let's import the following data :
+
+* Mutations and RNA data directly from data files (original data)
+* Mutations and RNA data from the logical model profiles (processed data)
+* Sensitivity metrics (drug and CRISPR)
+
+```{r DataImport, echo=FALSE, message=FALSE, warning=FALSE}
+tic()
+
+#Genes involved in PC model
+genenames <- read.table(paste0("Models/",model,"/",model,"_namesToHugo_curated.txt"),
+                         header=T,sep="\t")
+geneindex <- strsplit(as.character(genenames[,2]), split = ",") %>% sapply(function(l){gsub(" ","",l)})
+geneindex <- data.frame(V1 = rep(genenames[,1], sapply(geneindex, length)), V2 = unlist(geneindex))
+model_genes_HUGO <- unique(geneindex$V2) %>% sub("^\\s+", "", .)
+
+
+#First import CL clinical data for further use to correlate with logical modelling results
+CL_clin <- read_csv("Data/CL/Infos/model_list_20200115.csv") %>%
+  select(model_id, model_name, synonyms, model_type, COSMIC_ID, BROAD_ID,
+         contains("_data"), contains("tissue"), contains("cancer")) %>%
+  filter(mutation_data | cnv_data | expression_data) %>%
+  mutate(TCGA_label=if_else(cancer_type=="Colorectal Carcinoma", "CRC",
+                            if_else(cancer_type=="Melanoma", "CM", cancer_type)))
+
+#Focus on two cancer types only
+good_labels <- c("CRC", "CM")
+CL_clin %<>% filter(TCGA_label %in% good_labels)
+my_cell_lines <- unlist(CL_clin$model_name)
+my_cell_lines_s <- unlist(CL_clin$model_id)
+
+#Fonction to transpose some tibbles
+tibble_transpose <- function(df_input){
+  df_output <- df_input %>% gather(var, value, -gene_symbol) %>%
+    spread(gene_symbol, value) %>%
+    rename(model_name=var) %>% 
+    type_convert
+}
+
+#Import CL mutations profile
+CL_mut_processed <- read_csv(paste0("Results/Profiles/",model,"_CL_mut.csv")) %>%
+  rename(Patient_ID=X1) %>%
+  select(-matches("_b2")) %>%
+  rename_all(function(x) gsub("_b1", "", x)) %>%
+  mutate_at(vars(-Patient_ID), function(x) if_else(!is.na(x), 1, 0)) %>%
+  rename_at(vars(-Patient_ID), function(x) paste0("Mut_",x)) %>%
+  mutate_at(vars(-Patient_ID), as.factor)
+
+#Import CL RNA profile
+CL_RNA_processed <- read_csv(paste0("Results/Profiles/",model,"_CL_RNA_norm.csv")) %>%
+  rename(Patient_ID=X1) %>%
+  select(-matches("_b2")) %>%
+  rename_all(function(x) gsub("_b1", "", x)) %>%
+  rename_at(vars(-Patient_ID), function(x) paste0("RNA_",x))
+
+CL_processed <- full_join(CL_mut_processed, CL_RNA_processed, by="Patient_ID")
+
+#Import raw data
+#Select cancer genes to reduce size
+cancer_genes_cosmic <- read_delim("Data/Common/cancer_genes_COSMIC.txt", delim = ',') %>% unlist 
+cancer_genes_HPA <- read_delim("Data/Common/cancer_genes_HPA.txt", delim = ',') %>% unlist 
+cancer_genes <- c(cancer_genes_cosmic, cancer_genes_HPA) %>% unique
+
+#Import CL raw mutations data
+CL_mut_original <- read_csv("Data/CL/mutations_20191101.csv") %>% 
+  filter(model_name %in% my_cell_lines, gene_symbol %in% cancer_genes) %>%
+  select(model_name, gene_symbol) %>%
+  mutate(Status=1) %>% distinct %>%
+  pivot_wider(names_from=gene_symbol, values_from=Status, values_fill = list(Status = 0)) %>%
+  rename_at(vars(-model_name), function(x) paste0("Mut_",x)) %>%
+  mutate_at(vars(-model_name), as.factor)
+
+#Import CL raw RNA data
+CL_RNA_original <- read_csv("Data/CL/rnaseq_fpkm_20191101.csv", skip=1) %>%
+  rename(gene_symbol=X2) %>% slice(-c(1,2)) %>%
+  filter(gene_symbol %in% c(cancer_genes, model_genes_HUGO)) %>%
+  select(gene_symbol, one_of(my_cell_lines)) %>%
+  tibble_transpose %>%
+  mutate_if(is_numeric, function(x) log2(x+1)) %>%
+  rename_at(vars(-model_name), function(x) paste0("RNA_",x))
+
+CL_original <- full_join(CL_mut_original, CL_RNA_original, by="model_name") %>%
+  rename(Patient_ID=model_name)
+
+CL_original_red <- select(CL_original, Patient_ID,
+                          any_of(lapply(c("Mut_", "RNA_"),
+                                        function(x) paste0(x, model_genes_HUGO)) %>% unlist))
+
+#Import GDSC drug screening
+Drugs_Profile_Conversion <- read_csv(paste0("Results/Profiles/", model, "_drug_conversion.csv")) %>%
+  rename(Drug_ID=DRUG_ID, Drug_Name=DRUG_NAME) %>%
+  mutate(Drug_ID=as.character(Drug_ID))
+
+#Prepare conversion
+DC <- Drugs_Profile_Conversion %>%
+  mutate(Variant=1)
+for (r in 2:nrow(DC)){
+  prof <- DC$Drug_Target[r]
+  DC[r,"Variant"] <- 1+sum(DC$Drug_Target[1:(r-1)]==prof)
+}
+DC %<>% mutate(Variant=paste0(Drug_Target, "_",Variant)) %>%
+  add_row(Drug_ID=NA,Drug_Target="Zero",
+          Drug_Name="Zero", Variant="Zero") %>%
+  rename(Target=Drug_Target)
+
+
+#BRAF_drugs <- c("PLX-4720", "Dabrafenib")
+CL_Drugs <- read_xlsx("Data/CL/GDSC2_fitted_dose_response_15Oct19.xlsx") %>%
+  filter(SANGER_MODEL_ID %in% my_cell_lines_s) %>%
+  mutate(CELL_LINE_NAME=if_else(CELL_LINE_NAME=="LS-1034", "LS1034", CELL_LINE_NAME)) %>%
+  rename(Patient_ID=CELL_LINE_NAME, Drug_Name=DRUG_NAME) %>%
+  left_join(rename(CL_clin, Patient_ID=model_name) %>% select(Patient_ID, TCGA_label),
+            by="Patient_ID") %>%
+  filter(Drug_Name %in% DC$Drug_Name) %>%
+  select(Patient_ID, Drug_Name, Z_SCORE, AUC, TCGA_label) %>%
+  left_join(select(DC, -Drug_ID), by="Drug_Name") %>%
+  pivot_longer(one_of("Z_SCORE", "AUC"), names_to="Metric", values_to="Value")
+  
+#Import CRISPR/Cas9 screening
+CL_CC1 <- read_tsv("Data/CL/03_scaledBayesianFactors.tsv") %>%
+  filter(Gene %in% model_genes_HUGO) %>%
+  rename(LS1034=`LS-1034`) %>%
+  select(Gene, one_of(my_cell_lines)) %>%
+  pivot_longer(-Gene, names_to="Patient_ID", values_to="Value") %>%
+  left_join(rename(CL_clin, Patient_ID=model_name) %>% select(Patient_ID, TCGA_label),
+            by="Patient_ID")
+
+CL_CC2 <- read_tsv("Data/CL/scaledBayesianFactors.tsv") %>%
+  filter(Gene %in% model_genes_HUGO) %>%
+  pivot_longer(-Gene, names_to="Patient_ID", values_to="Value") %>%
+  rename(BROAD_ID=Patient_ID) %>%
+  left_join(select(CL_clin, BROAD_ID, model_name, TCGA_label),
+            by="BROAD_ID")  %>%
+  mutate(model_name=if_else(model_name=="LS-1034", "LS1034", model_name)) %>%
+  rename(Patient_ID=model_name) %>%
+  filter(Patient_ID %in% my_cell_lines) %>%
+  select(-BROAD_ID)
+
+CL_CC_All <- bind_rows(mutate(CL_CC1, Metric="CC1"),
+                       mutate(CL_CC2, Metric="CC2")) %>%
+  rename(Variant=Gene) %>%
+  left_join(rename(geneindex, Target=V1, Variant=V2),
+            by="Variant")
+
+#Merge all metric
+CL_Metrics <- bind_rows(mutate(CL_Drugs, Screening="Drug"),
+                        mutate(CL_CC_All, Screening="CRISPR"))
+  
+CL_Metrics_Sample_Size <- CL_Metrics %>%
+  filter(!is.na(Value)) %>%
+  group_by(TCGA_label, Screening, Metric, Variant) %>%
+  summarize(Size=n()) %>%
+  ungroup()
+
+#Nodes data
+import_ALL <- function(sim_case){
+  simulations <- read_table2(paste0("Results/Simulations/",model,"_CL_",sim_case,".txt")) %>%
+    select(-Time, -n_profile) %>%
+    mutate(Proliferation=(Proliferation_b1 + Proliferation_b2)/2)
+  return(simulations)
+}
+
+simulations <- sapply(sim_cases, import_ALL, simplify = F, USE.NAMES = T)
+
+
+print("All imports OK")
+```
+
+Please note that, to reduce the size of mutations and RNA matrices, we focus only on cancer-related genes using a merged list from COSMIC and HPA (Human Proteome Atlas) composed of `r length(cancer_genes)`. So all in all we build 3 different matrices of input data:
+
+* Matrix **CL_processed** includes mutations and RNA from profiles used for logical models personalization
+* Matrix **CL_original** includes mutations and RNA only for cancer-related genes (`r length(cancer_genes)`) and model-related genes
+* Matrix **CL_original_red** includes mutations and RNA only model-related genes (`r length(model_genes_HUGO)`)
+
+# Random forest implementation
+
+To increase the number of samples and favour the learning of RF algorithms we decided to merge similar learning task:
+
+* For **Drugs** screening, outcome of BRAF inhibition through PLX and Dabrafenib are conidered altogether (using z-scores $log(IC50)$ to reinforce comparability between drugs)
+* For **CRISPR** screening, datasets from Broad and Sanger screenings are merged
+
+In both cases this strategy results in duplicate patients with potentially different outcomes
+
+```{r rf_compute, echo=FALSE, message=FALSE, warning=FALSE, eval=TRUE}
+
+rf_performances <- data.frame(Screening=NA_character_,
+                              Data=NA_character_,
+                              Processing=NA_character_,
+                              Exp_Var=NA_real_) %>%
+  filter(!is.na(Screening))
+
+# CL_Metrics_forMerge <- filter(CL_Metrics,
+#                               Target=="BRAF",
+#                               (Screening=="Drug" & Metric=="Z_SCORE" & Drug_Name=="PLX-4720") |
+#                                 (Screening=="CRISPR" & Metric=="CC2")) %>%
+#   select(-Drug_Name, -TCGA_label, -Target, -Variant, -Metric)
+
+CL_Metrics_forMerge <- filter(CL_Metrics,
+                              Target=="BRAF",
+                              (Screening=="Drug" & Metric=="Z_SCORE") |
+                                (Screening=="CRISPR")) %>%
+  select(-Drug_Name, -TCGA_label, -Target, -Variant, -Metric)
+
+for (s in c("Drug", "CRISPR")){
+  for (d in c("Mut", "RNA", "Mut_RNA")){
+    for (p in c("original", "original_red", "processed")){
+      data_rf <- full_join(CL_Metrics_forMerge,
+                           get(paste0("CL_", p)),
+                           by="Patient_ID") %>%
+        filter(!is.na(Value),
+               Screening==!!s) %>%
+        select(-Patient_ID, -Screening) %>%
+        as.data.frame
+      
+      if (d != "Mut_RNA"){
+        data_rf %<>% select(Value, starts_with(d))
+      }
+      
+      fit <- rfsrc(Value~., data = data_rf, importance = T)
+      
+      exp_var <- 100*(1 - ( mean( (fit$yvar-fit$predicted.oob)^2 ) / var(fit$yvar) ))
+      
+      imp <- fit$importance %>% sort(decreasing = T) %>% head(n=10) %>%
+        enframe(name="Variable", value = "Importance") %>%
+        mutate(Screening=s, Data=d, Processing=p,Exp_Var=exp_var)
+        
+      # rf_performances %<>% add_row(Screening=s, Data=d, Processing=p,
+      #                              Exp_Var=exp_var)
+      
+      rf_performances %<>% bind_rows(imp)
+      
+    }
+  }
+}
+
+#i <- find.interaction(t)
+print("RF fitting done")
+```
+
+## Percentage of variance explained
+
+We use radom forests to predict sensitivity to BRAF inhibition (with drugs or CRISPR). Let's compare the percentage of variance explained by the fitted random forests in different cases. Each learning task is a combination of:
+
+* the processing of input dataset (original data, original data for model genes only, processed data for model profiles)
+* the kind of omics data used (mutatios only, RNA only, mutations & RNA)
+* the nature of outcome predicted (from drug screening or CRISPR screening).
+
+```{r rf_plot, echo=FALSE, message=FALSE, warning=FALSE, eval=TRUE}
+
+data_colors <- c("Mut"="#306489FF", "RNA"="#EBCB8BFF", "Mut_RNA"="#A3BE8CFF")
+
+
+select(rf_performances, -Variable, -Importance) %>% distinct %>%
+  mutate(Processing=case_when(
+         Processing=="original" ~ "Original data\n(cancer and model genes)",
+         Processing=="original_red" ~ "Original data\n(model genes only)",
+         Processing=="processed" ~ "Processed data\n(model profiles)"
+       )) %>%
+  mutate(Screening=factor(Screening, levels=c("Drug", "CRISPR")),
+         Data=factor(Data, levels=c("Mut", "RNA", "Mut_RNA"))) %>%
+  ggplot(aes(x=Data, y=Exp_Var)) +
+  geom_bar(stat = "identity", aes(fill=Data)) +
+  scale_fill_manual(values=data_colors) +
+  facet_grid(Screening~Processing) +
+  theme_pubclean() +
+  guides(fill=FALSE) +
+  labs(title = "RF performances",
+       x = "Omics data used",
+       y = "% of explained variance")
+
+```
+
+We can derive some insights from the above plot :
+
+* Original and processed data result in very similar performances for Drugs sensitivity prediction. Nevertheless, for CRISPR sensitivity prediction, performances increased when we use only model genes and even more when we use direcly model profiles. One hypothesis: since we have less samples in CRISPR data, reducing the number of variables (~3500 for original data, ~90 for original data with model genes only, ~40 variables for model profiles) may have a positive influence. This effect is not present in Drugs but we have 2 times more samples (~160 samples for drugs and ~70 for CRISPR). But all in all, we can say that our data processing before model personalization does not seem to significantly decrease the amount of information in the data.
+
+* For Drug sensitivity prediction mutation and RNA data (separately) seem to result in similar performances. But merging them together does not provide significantly improved results. For CRISPR sensitivity prediction, RNA data seems less informative, especially with reduced datasets. Merging mutations and RNA does not improve drastically overall performance.
+
+
+## Variable importance
+
+But beyond performance we are mainly interested by interpretation so we will have a look at Variable Importance (VIMP) as measured by the random forests.
+
+```{r rf_vimp, echo=FALSE, message=FALSE, warning=FALSE, eval=TRUE}
+
+
+filter(rf_performances, Screening=="Drug", Importance>0) %>%
+  mutate(Processing=case_when(
+         Processing=="original" ~ "Original data\n(cancer and model genes)",
+         Processing=="original_red" ~ "Original data\n(model genes only)",
+         Processing=="processed" ~ "Processed data\n(model profiles)"
+       )) %>%
+  mutate(#Screening=factor(Screening, levels=c("Drug", "CRISPR")),
+         Data=factor(Data, levels=c("Mut", "RNA", "Mut_RNA"))) %>%
+  ggplot(aes(x=reorder(Variable, -Importance), y=Importance)) +
+  geom_bar(stat = "identity", aes(fill=Data)) +
+  scale_fill_manual(values=data_colors) +
+  facet_grid(Data~Processing, scales = "free", space = "free") +
+  theme_pubclean() +
+  theme(axis.text.x = element_text(size=5, angle = 90)) +
+  guides(fill=FALSE) +
+  labs(title = "RF interpretation - Drugs",
+       x = "Variable",
+       y = "Variable importance")
+
+filter(rf_performances, Screening=="CRISPR", Importance>0) %>%
+  mutate(Processing=case_when(
+         Processing=="original" ~ "Original data\n(cancer and model genes)",
+         Processing=="original_red" ~ "Original data\n(model genes only)",
+         Processing=="processed" ~ "Processed data\n(model profiles)"
+       )) %>%
+  mutate(#Screening=factor(Screening, levels=c("Drug", "CRISPR")),
+         Data=factor(Data, levels=c("Mut", "RNA", "Mut_RNA"))) %>%
+  ggplot(aes(x=reorder(Variable, -Importance), y=Importance)) +
+  geom_bar(stat = "identity", aes(fill=Data)) +
+  scale_fill_manual(values=data_colors) +
+  facet_grid(Data~Processing, scales = "free", space = "free") +
+  theme_pubclean() +
+  theme(axis.text.x = element_text(size=5, angle = 90)) +
+  guides(fill=FALSE) +
+  labs(title = "RF interpretation - CRISPR",
+       x = "Variable",
+       y = "Variable importance")
+
+```
+
+Mutational status of BRAF is the main driver of sensitivity prediction. RAS and p53 also appear as important mutations, taken into account in the model. The APC gene is the main important mutational variable not present in the model.
+
+## Variable interactions
+
+Now let's visualize the synergies between variables (by pairs). We focus here on Drugs screening with original data restricted to model nodes, using both mutations and RNA. On the following plot, off-diagonal coefficients show the synergistic effect of the combination of variable (). Diagonal coefficients remind the variable importance of variable alone.
+
+```{r rf_interaction, echo=FALSE, message=FALSE, warning=FALSE, eval=TRUE}
+
+plot_interactions <- function(dataset){
+
+data_int <- full_join(CL_Metrics_forMerge, get(paste0("CL_", dataset)),
+                      by="Patient_ID") %>%
+  filter(!is.na(Value),
+         Screening=="Drug") %>%
+  select(-Patient_ID, -Screening) %>%
+  as.data.frame
+      
+fit <- rfsrc(Value~., data = data_int, importance = "permute")
+
+fit_var_imp <- fit$importance %>% sort(decreasing = T) %>% head(n=10) %>% names
+
+fit_int <- find.interaction(object =fit, xvar.names = fit_var_imp,
+                            importance = "permute", method = "vimp",
+                            verbose = F) 
+
+plot_data <- fit_int %>% as_tibble(rownames = NA) %>%
+  select(Difference) %>%
+  rownames_to_column(var="Pair") %>%
+  mutate(Row=strsplit(Pair, ":") %>% lapply(`[[`, 1) %>% unlist,
+         Column=strsplit(Pair, ":") %>% lapply(`[[`, 2) %>% unlist) %>%
+  select(-Pair) %>%
+  bind_rows(mutate(., I=Column, Column=Row) %>% mutate(Row=I)) %>% select(-I) %>%
+  rename(VIMP=Difference)
+  #wider(names_from=Column, values_from=Difference) %>%
+  #select(Row, one_of(.$Row))
+
+indiv_vimp <- fit$importance %>% enframe(name = "Row", value = "VIMP") %>%
+  filter(Row %in% fit_var_imp) %>%
+  mutate(Column=Row) %>%
+  arrange(desc(VIMP))
+
+plot_data %<>% #bind_rows(indiv_vimp) %>%
+  mutate(VIMP=if_else(VIMP<0, 0, VIMP),
+         Row=factor(Row, levels=indiv_vimp$Row),
+         Column=factor(Column, levels=indiv_vimp$Column))
+
+ggplot(plot_data, aes(x=Column, y=Row, VIMP)) +
+  geom_tile(color="black", aes(fill=VIMP)) +
+  geom_text(data=indiv_vimp, aes(label=round(VIMP, digits=2))) +
+  scale_fill_paletteer_c("pals::ocean.tempo", direction = +1, limits=c(0, NA)) +
+  #scale_fill_paletteer_c("scico::lapaz", direction = -1, limits=c(0, NA)) +
+  theme_pubclean() +
+  theme(legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 0.5),
+        panel.grid.major.y = element_blank()) +
+  #scale_x_discrete(position = "top") +
+  labs(fill="Variable\nimportance",
+       x="",
+       y="",
+       title = paste0("Importance of interactions between variables\n(", dataset ," dataset)"))
+
+}
+
+plot_interactions("processed")
+plot_interactions("original_red")
+plot_interactions("original")
+
+```
+
+We mainly observed important interaction/synergies between BRAF and RAS mutational status. But also between BRAF and some RNA levels, especially FOXD3 and SPRY. 
+
+```{r eval=TRUE, echo=FALSE}
+print("Done")
+print(paste0("Computation time:"))
+toc()
+```
