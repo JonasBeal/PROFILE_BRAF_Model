@@ -1,0 +1,2 @@
+n_profile Patient_ID Drug_ID Time Proliferation_b1 Proliferation_b2
+0 WT Zero 99.0 0.227704 0.131685

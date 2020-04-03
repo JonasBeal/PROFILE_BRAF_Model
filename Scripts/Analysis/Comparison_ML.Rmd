@@ -227,7 +227,9 @@ In both cases this strategy results in duplicate patients with potentially diffe
 rf_performances <- data.frame(Screening=NA_character_,
                               Data=NA_character_,
                               Processing=NA_character_,
-                              Exp_Var=NA_real_) %>%
+                              Exp_Var=NA_real_,
+                              N_Var=NA_real_,
+                              N_Samples=NA_real_) %>%
   filter(!is.na(Screening))
 
 # CL_Metrics_forMerge <- filter(CL_Metrics,
@@ -263,7 +265,9 @@ for (s in c("Drug", "CRISPR")){
       
       imp <- fit$importance %>% sort(decreasing = T) %>% head(n=10) %>%
         enframe(name="Variable", value = "Importance") %>%
-        mutate(Screening=s, Data=d, Processing=p,Exp_Var=exp_var)
+        mutate(Screening=s, Data=d, Processing=p, Exp_Var=exp_var,
+               N_Var=ncol(data_rf)-1,
+               N_Samples=sum(rowSums(is.na(data_rf)) < ncol(data_rf)-1))
         
       # rf_performances %<>% add_row(Screening=s, Data=d, Processing=p,
       #                              Exp_Var=exp_var)
@@ -298,22 +302,28 @@ select(rf_performances, -Variable, -Importance) %>% distinct %>%
          Processing=="processed" ~ "Processed data\n(model profiles)"
        )) %>%
   mutate(Screening=factor(Screening, levels=c("Drug", "CRISPR")),
-         Data=factor(Data, levels=c("Mut", "RNA", "Mut_RNA"))) %>%
+         Data=factor(Data, levels=c("Mut", "RNA", "Mut_RNA")),
+         Label=paste0("n=", N_Var, "\np=", N_Samples)) %>%
   ggplot(aes(x=Data, y=Exp_Var)) +
   geom_bar(stat = "identity", aes(fill=Data)) +
+  geom_text(aes(label=Label), size=4, color="white", y=13, angle=0) +
   scale_fill_manual(values=data_colors) +
   facet_grid(Screening~Processing) +
   theme_pubclean() +
   guides(fill=FALSE) +
-  labs(title = "RF performances",
+  labs(title = "Performances of random forests for BRAF sensitivity prediction",
+       subtitle = "(n samples and p variables per learning task)",
        x = "Omics data used",
        y = "% of explained variance")
 
 ```
 
+```{r rf_plot_pub, echo=FALSE, message=FALSE, warning=FALSE, eval=FALSE}
+```
+
 We can derive some insights from the above plot :
 
-* Original and processed data result in very similar performances for Drugs sensitivity prediction. Nevertheless, for CRISPR sensitivity prediction, performances increased when we use only model genes and even more when we use direcly model profiles. One hypothesis: since we have less samples in CRISPR data, reducing the number of variables (~3500 for original data, ~90 for original data with model genes only, ~40 variables for model profiles) may have a positive influence. This effect is not present in Drugs but we have 2 times more samples (~160 samples for drugs and ~70 for CRISPR). But all in all, we can say that our data processing before model personalization does not seem to significantly decrease the amount of information in the data.
+* Original and processed data result in very similar performances for Drugs sensitivity prediction. Nevertheless, for CRISPR sensitivity prediction, performances increased when we use only model genes and even more when we use direcly model profiles. One hypothesis: since we have less samples in CRISPR data, reducing the number of variables may have a positive influence. This effect is not present in Drugs but we have 2 times more samples. But all in all, we can say that our data processing before model personalization does not seem to significantly decrease the amount of information in the data.
 
 * For Drug sensitivity prediction mutation and RNA data (separately) seem to result in similar performances. But merging them together does not provide significantly improved results. For CRISPR sensitivity prediction, RNA data seems less informative, especially with reduced datasets. Merging mutations and RNA does not improve drastically overall performance.
 
@@ -338,9 +348,10 @@ filter(rf_performances, Screening=="Drug", Importance>0) %>%
   scale_fill_manual(values=data_colors) +
   facet_grid(Data~Processing, scales = "free", space = "free") +
   theme_pubclean() +
-  theme(axis.text.x = element_text(size=5, angle = 90)) +
+  theme(axis.text.x = element_text(size=6, angle = 90)) +
   guides(fill=FALSE) +
-  labs(title = "RF interpretation - Drugs",
+  labs(title = "Random forests for BRAF drug sensitivity - Variable importance",
+       subtitle = "(10 best variables with positive importance for each case)",
        x = "Variable",
        y = "Variable importance")
 
@@ -357,9 +368,10 @@ filter(rf_performances, Screening=="CRISPR", Importance>0) %>%
   scale_fill_manual(values=data_colors) +
   facet_grid(Data~Processing, scales = "free", space = "free") +
   theme_pubclean() +
-  theme(axis.text.x = element_text(size=5, angle = 90)) +
+  theme(axis.text.x = element_text(size=6, angle = 90)) +
   guides(fill=FALSE) +
-  labs(title = "RF interpretation - CRISPR",
+  labs(title = "Random forests for BRAF CRISPR sensitivity - Variable importance",
+       subtitle = "(10 best variables with positive importance for each case)",
        x = "Variable",
        y = "Variable importance")
 
