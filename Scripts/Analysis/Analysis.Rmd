@@ -111,7 +111,7 @@ CL_RNA_profile <- read_csv(paste0("Results/Profiles/",model,"_CL_RNA_norm.csv"))
          #SOX10, HGF, EGF, FGF, 
          ERK,
          #SPRY,
-         p70, PDK1, CRAF) %>%
+         p70, PDPK1, CRAF) %>%
   mutate_at(vars(-Patient_ID), function(x) round(x, digits=2)) %>%
   mutate(Label_RNA=NA_character_)
 gene_names <- colnames(CL_RNA_profile)
@@ -304,6 +304,8 @@ We first compare the **Proliferation** outcome from personalized models with the
 
 We use different **Proliferation** proxies: the one from models without drug (resp. CRISPR) inhibition, the one from models with drug (resp. CRISPR) inhibition, and the normalised one. We also compare different personalization methods: with mutations only, with RNA only, and with mutations and RNA together.
 
+## All correlations for BRAF
+
 On the following plot correlation coefficients are shown only for significant correlations. B panels correspond to Drugs screening and C panels to CRISPR screenings.
 
 ```{r correlations, echo=FALSE, fig.height=6, fig.width=10, message=FALSE, warning=FALSE}
@@ -413,6 +415,8 @@ Some interesting points:
   * Normalised **Proliferation** appeared as the best proxy for drug sensitivity
   * RNA alone is usually not significant but its conjunction with mutation usually results in better results
   
+## Correaltions for other targets
+  
 Here are additional plots for other targets;
   
 ```{r correlations2, echo=FALSE, fig.height=6, fig.width=9, message=FALSE, warning=FALSE}
@@ -422,7 +426,11 @@ overall_corr(corr, "p53",
 overall_corr(corr, "PI3K",
              output=c("Prolif. norm."))
 ```
-  
+
+Since the present model has been designed around BRAF, its regulators have been carefully selected and implemented, which is not necessarily the case for other nodes of the model. Therefore, these personalized models can be used to study how comprehensive the descriptions of the regulation of other nodes or parts of the model are. Thus, model simulations show that response trends to TP53 inhibition are consistently recovered by the model but the simple regulation of p53 in the model results in coarse-grained patterns, although slightly improved by addition of RNA data. Similar analyses regarding the targeting of PIK3CA (in CRISPR data) simulated, in the model, by the inhibition of PI3K node, can be performed. Low correlations are an indication highlighting the insufficient regulation of the node.
+
+## Summary and publication plot
+
 For drugs we will focus on one drug only which is PLX-4720 (very similar to Dabrafenib in many aspects, no particular criterion to distinguish) and AUC metric (less sensitive to extrapolation). For CRISPR screening we will focus on CC2 dataset, more balanced in CM and CRC. For output we will also focus on normalised Proliferation scores:
 
 Here is the pruned version of the plot for publication:
@@ -765,7 +773,7 @@ plot_data_tab <- filter(data_all_clin,
                     Output=="Prolif. norm.",
                     SimCase == "mut_RNA",
                     !is.na(Value)) %>%
-    left_join(select(CL_mut_profile, Patient_ID, BRAF, p53, RAS, PI3K, MEK1_2),
+    left_join(select(CL_mut_profile, Patient_ID, BRAF, p53, RAS, PI3K, MEK),
               by = "Patient_ID")
   
   p_crispr_label <- mutate(plot_data_tab, Variant="Broad data") %>%
@@ -790,8 +798,8 @@ plot_data_tab <- filter(data_all_clin,
          color="Cancer type",
          alpha="BRAF status")
   
-  genes_mut <- c("BRAF", "RAS", "p53", "PI3K", "MEK1_2")
-  genes_RNA <- c("CRAF", "ERK", "PDK1", "p70")
+  genes_mut <- c("BRAF", "RAS", "p53", "PI3K", "MEK")
+  genes_RNA <- c("CRAF", "ERK", "PDPK1", "p70")
   CL_of_interest <- c("SK-MEL-24", "COLO-678", "HT-29", "HT-144", "HT55", "SK-MEL-30", "SK-MEL-2", "UACC-62")
   
   plot_data_basis <- filter(data_all_clin,
@@ -807,16 +815,18 @@ plot_data_tab <- filter(data_all_clin,
                                     one_of(genes_mut)),
               by = "Patient_ID") %>%
       gather(any_of(genes_mut),key ="Model nodes", value="Value") %>%
-    mutate(Type="Mutations profile\n(discrete)",
-           `Model nodes`=if_else(`Model nodes`=="MEK1_2", "MEK",`Model nodes`))
+    mutate(Type="Mutations profile\n(discrete)"#,
+           #`Model nodes`=if_else(`Model nodes`=="MEK1_2", "MEK",`Model nodes`)
+           )
   
   plot_data_RNA <- left_join(plot_data_basis,
                              select(CL_RNA_profile, Patient_ID,
                                     one_of(genes_RNA)),
               by = "Patient_ID") %>%
       gather(any_of(genes_RNA),key ="Model nodes", value="Value") %>%
-    mutate(Type="RNA profile\n(continuous)",
-           `Model nodes`=if_else(`Model nodes`=="PDK1", "PDPK1",`Model nodes`))
+    mutate(Type="RNA profile\n(continuous)"#,
+          # `Model nodes`=if_else(`Model nodes`=="PDK1", "PDPK1",`Model nodes`)
+          )
   
   plot_data_tab2 <- bind_rows(plot_data_mut, plot_data_RNA) %>%
     mutate(Value_char=as.character(Value)) %>%
