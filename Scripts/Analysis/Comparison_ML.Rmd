@@ -282,6 +282,8 @@ for (s in c("Drug", "CRISPR")){
 print("RF fitting done")
 ```
 
+$100 \times (1- \dfrac{Mean[(Y_{observed}-Y_{predicted})^2]}{Var(Y_{observed})})$
+
 ## Percentage of variance explained
 
 We use radom forests to predict sensitivity to BRAF inhibition (with drugs or CRISPR). Let's compare the percentage of variance explained by the fitted random forests in different cases. Each learning task is a combination of:

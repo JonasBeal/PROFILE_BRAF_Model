@@ -1,5 +1,5 @@
 ---
-title: "Analysis"
+title: "Analysis (with Thyroid patients)"
 author: "Jonas BÉAL"
 date: "09/02/2020"
 output:
@@ -115,7 +115,7 @@ CL_RNA_profile <- read_csv(paste0("Results/Profiles/withThyroid/",model,"_CL_RNA
          #SOX10, HGF, EGF, FGF, 
          ERK,
          #SPRY,
-         p70, PDK1, CRAF) %>%
+         p70, PDPK1, CRAF) %>%
   mutate_at(vars(-Patient_ID), function(x) round(x, digits=2)) %>%
   mutate(Label_RNA=NA_character_)
 gene_names <- colnames(CL_RNA_profile)
@@ -773,7 +773,7 @@ plot_data_tab <- filter(data_all_clin,
                     Output=="Prolif. norm.",
                     SimCase == "mut_RNA",
                     !is.na(Value)) %>%
-    left_join(select(CL_mut_profile, Patient_ID, BRAF, p53, RAS, PI3K, MEK1_2),
+    left_join(select(CL_mut_profile, Patient_ID, BRAF, p53, RAS, PI3K, MEK),
               by = "Patient_ID")
   
   p_crispr_label <- mutate(plot_data_tab, Variant="Broad data") %>%
@@ -798,8 +798,8 @@ plot_data_tab <- filter(data_all_clin,
          color="Cancer type",
          alpha="BRAF status")
   
-  genes_mut <- c("BRAF", "RAS", "p53", "PI3K", "MEK1_2")
-  genes_RNA <- c("CRAF", "ERK", "PDK1", "p70")
+  genes_mut <- c("BRAF", "RAS", "p53", "PI3K", "MEK")
+  genes_RNA <- c("CRAF", "ERK", "PDPK1", "p70")
   CL_of_interest <- c("SK-MEL-24", "COLO-678", "HT-29", "HT-144", "HT55", "SK-MEL-30", "SK-MEL-2", "UACC-62")
   
   plot_data_basis <- filter(data_all_clin,
@@ -815,16 +815,14 @@ plot_data_tab <- filter(data_all_clin,
                                     one_of(genes_mut)),
               by = "Patient_ID") %>%
       gather(any_of(genes_mut),key ="Model nodes", value="Value") %>%
-    mutate(Type="Mutations profile\n(discrete)",
-           `Model nodes`=if_else(`Model nodes`=="MEK1_2", "MEK",`Model nodes`))
+    mutate(Type="Mutations profile\n(discrete)")
   
   plot_data_RNA <- left_join(plot_data_basis,
                              select(CL_RNA_profile, Patient_ID,
                                     one_of(genes_RNA)),
               by = "Patient_ID") %>%
       gather(any_of(genes_RNA),key ="Model nodes", value="Value") %>%
-    mutate(Type="RNA profile\n(continuous)",
-           `Model nodes`=if_else(`Model nodes`=="PDK1", "PDPK1",`Model nodes`))
+    mutate(Type="RNA profile\n(continuous)")
   
   plot_data_tab2 <- bind_rows(plot_data_mut, plot_data_RNA) %>%
     mutate(Value_char=as.character(Value)) %>%

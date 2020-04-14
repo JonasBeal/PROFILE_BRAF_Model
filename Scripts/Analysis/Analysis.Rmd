@@ -815,18 +815,14 @@ plot_data_tab <- filter(data_all_clin,
                                     one_of(genes_mut)),
               by = "Patient_ID") %>%
       gather(any_of(genes_mut),key ="Model nodes", value="Value") %>%
-    mutate(Type="Mutations profile\n(discrete)"#,
-           #`Model nodes`=if_else(`Model nodes`=="MEK1_2", "MEK",`Model nodes`)
-           )
+    mutate(Type="Mutations profile\n(discrete)")
   
   plot_data_RNA <- left_join(plot_data_basis,
                              select(CL_RNA_profile, Patient_ID,
                                     one_of(genes_RNA)),
               by = "Patient_ID") %>%
       gather(any_of(genes_RNA),key ="Model nodes", value="Value") %>%
-    mutate(Type="RNA profile\n(continuous)"#,
-          # `Model nodes`=if_else(`Model nodes`=="PDK1", "PDPK1",`Model nodes`)
-          )
+    mutate(Type="RNA profile\n(continuous)")
   
   plot_data_tab2 <- bind_rows(plot_data_mut, plot_data_RNA) %>%
     mutate(Value_char=as.character(Value)) %>%
