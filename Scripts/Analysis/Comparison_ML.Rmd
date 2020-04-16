@@ -297,7 +297,7 @@ We use radom forests to predict sensitivity to BRAF inhibition (with drugs or CR
 data_colors <- c("Mut"="#306489FF", "RNA"="#EBCB8BFF", "Mut_RNA"="#A3BE8CFF")
 
 
-select(rf_performances, -Variable, -Importance) %>% distinct %>%
+p_expvar <- select(rf_performances, -Variable, -Importance) %>% distinct %>%
   mutate(Processing=case_when(
          Processing=="original" ~ "Original data\n(cancer and model genes)",
          Processing=="original_red" ~ "Original data\n(model genes only)",
@@ -321,6 +321,7 @@ select(rf_performances, -Variable, -Importance) %>% distinct %>%
 ```
 
 ```{r rf_plot_pub, echo=FALSE, message=FALSE, warning=FALSE, eval=FALSE}
+ggsave(file="p_expvar.svg", plot=p_1, width=12, height=6)
 ```
 
 We can derive some insights from the above plot :
@@ -337,7 +338,7 @@ But beyond performance we are mainly interested by interpretation so we will hav
 ```{r rf_vimp, echo=FALSE, message=FALSE, warning=FALSE, eval=TRUE}
 
 
-filter(rf_performances, Screening=="Drug", Importance>0) %>%
+p_varimp <- filter(rf_performances, Screening=="Drug", Importance>0) %>%
   mutate(Processing=case_when(
          Processing=="original" ~ "Original data\n(cancer and model genes)",
          Processing=="original_red" ~ "Original data\n(model genes only)",
@@ -356,6 +357,7 @@ filter(rf_performances, Screening=="Drug", Importance>0) %>%
        subtitle = "(10 best variables with positive importance for each case)",
        x = "Variable",
        y = "Variable importance")
+p_varimp
 
 filter(rf_performances, Screening=="CRISPR", Importance>0) %>%
   mutate(Processing=case_when(
@@ -377,6 +379,10 @@ filter(rf_performances, Screening=="CRISPR", Importance>0) %>%
        x = "Variable",
        y = "Variable importance")
 
+```
+
+```{r rf_plot_pub2, echo=FALSE, message=FALSE, warning=FALSE, eval=FALSE}
+ggsave(file="p_varimp.svg", plot=p_varimp, width=12, height=6)
 ```
 
 Mutational status of BRAF is the main driver of sensitivity prediction. RAS and p53 also appear as important mutations, taken into account in the model. The APC gene is the main important mutational variable not present in the model.
