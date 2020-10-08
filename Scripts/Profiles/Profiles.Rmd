@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-models <- c("BRAF_Model")
+models <- c("BRAF_Model", "Flobak")
 
 knitr::opts_chunk$set(echo = TRUE)
 
@@ -139,12 +139,12 @@ And almost all genes related to the model have corresponding data for all omics:
 
 ```{r Venn2, echo=FALSE, eval=TRUE}
 intersections_genes <- list(Mutations=intersect(unique(CL_mut$gene_symbol),
-                                                unlist(model_genes)),
+                                                unlist(model_genes_all)),
                                CNA=intersect(select(CL_CNA, -model_name) %>% colnames,
-                                             unlist(model_genes)),
+                                             unlist(model_genes_all)),
                                RNA=intersect(select(CL_RNA, -model_name) %>% colnames,
-                                             unlist(model_genes)),
-                               Model=unlist(model_genes)
+                                             unlist(model_genes_all)),
+                               Model=unlist(model_genes_all)
                             )
 euler(intersections_genes, shape="ellipse") %>%
   plot(quantities=list("counts"),

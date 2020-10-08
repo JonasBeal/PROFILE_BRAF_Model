@@ -305,7 +305,7 @@ p_expvar <- select(rf_performances, -Variable, -Importance) %>% distinct %>%
        )) %>%
   mutate(Screening=factor(Screening, levels=c("Drug", "CRISPR")),
          Data=factor(Data, levels=c("Mut", "RNA", "Mut_RNA")),
-         Label=paste0("n=", N_Var, "\np=", N_Samples)) %>%
+         Label=paste0("n=",N_Samples , "\np=", N_Var)) %>%
   ggplot(aes(x=Data, y=Exp_Var)) +
   geom_bar(stat = "identity", aes(fill=Data)) +
   geom_text(aes(label=Label), size=4, color="white", y=13, angle=0) +
@@ -318,10 +318,11 @@ p_expvar <- select(rf_performances, -Variable, -Importance) %>% distinct %>%
        x = "Omics data used",
        y = "% of explained variance")
 
+p_expvar
 ```
 
 ```{r rf_plot_pub, echo=FALSE, message=FALSE, warning=FALSE, eval=FALSE}
-ggsave(file="p_expvar.svg", plot=p_1, width=12, height=6)
+ggsave(file="p_expvar.svg", plot=p_expvar, width=12, height=6)
 ```
 
 We can derive some insights from the above plot :
